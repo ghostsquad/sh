@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/muesli/cancelreader"
+
 	"mvdan.cc/sh/v3/expand"
 )
 
@@ -43,7 +45,7 @@ type HandlerContext struct {
 	Dir string
 
 	// Stdin is the interpreter's current standard input reader.
-	Stdin io.Reader
+	Stdin cancelreader.CancelReader
 	// Stdout is the interpreter's current standard output writer.
 	Stdout io.Writer
 	// Stderr is the interpreter's current standard error writer.

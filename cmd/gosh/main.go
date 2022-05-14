@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/muesli/cancelreader"
 	"golang.org/x/term"
 
 	"mvdan.cc/sh/v3/interp"
@@ -32,7 +33,11 @@ func main() {
 }
 
 func runAll() error {
-	r, err := interp.New(interp.StdIO(os.Stdin, os.Stdout, os.Stderr))
+	cancellableStdIn, err := cancelreader.NewReader(os.Stdin)
+	if err != nil {
+		return err
+	}
+	r, err := interp.New(interp.StdIO(cancellableStdIn, os.Stdout, os.Stderr))
 	if err != nil {
 		return err
 	}

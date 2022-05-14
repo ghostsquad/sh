@@ -8,6 +8,8 @@ import (
 	"io"
 	"testing"
 
+	"github.com/muesli/cancelreader"
+
 	"mvdan.cc/sh/v3/interp"
 )
 
@@ -171,7 +173,10 @@ func TestInteractive(t *testing.T) {
 		t.Run("", func(t *testing.T) {
 			inReader, inWriter := io.Pipe()
 			outReader, outWriter := io.Pipe()
-			runner, _ := interp.New(interp.StdIO(inReader, outWriter, outWriter))
+
+			cr, err := cancelreader.NewReader(inReader)
+
+			runner, _ := interp.New(interp.StdIO(cr, outWriter, outWriter))
 			errc := make(chan error, 1)
 			go func() {
 				errc <- runInteractive(runner, inReader, outWriter, outWriter)
@@ -203,7 +208,7 @@ func TestInteractive(t *testing.T) {
 			// so that any remaining prompt writes get discarded.
 			outReader.Close()
 
-			err := <-errc
+			err = <-errc
 			if err != nil && tc.wantErr == "" {
 				t.Fatalf("unexpected error: %v", err)
 			} else if tc.wantErr != "" && fmt.Sprint(err) != tc.wantErr {
@@ -218,7 +223,13 @@ func TestInteractiveExit(t *testing.T) {
 	defer inReader.Close()
 	go io.WriteString(inWriter, "exit\n")
 	w := io.Discard
-	runner, _ := interp.New(interp.StdIO(inReader, w, w))
+
+	cr, err := cancelreader.NewReader(inReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runner, _ := interp.New(interp.StdIO(cr, w, w))
 	if err := runInteractive(runner, inReader, w, w); err != nil {
 		t.Fatal("expected a nil error")
 	}

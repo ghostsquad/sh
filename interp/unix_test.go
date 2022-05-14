@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/creack/pty"
+	"github.com/muesli/cancelreader"
 )
 
 func TestRunnerTerminalStdIO(t *testing.T) {
@@ -53,7 +54,13 @@ func TestRunnerTerminalStdIO(t *testing.T) {
 			// some secondary ends can be used as stdin too
 			secondaryReader, _ := secondary.(io.Reader)
 
-			r, _ := New(StdIO(secondaryReader, secondary, secondary))
+			cr, err := cancelreader.NewReader(secondaryReader)
+			if err != nil {
+				t.Error(err)
+			}
+			defer cr.Close()
+
+			r, _ := New(StdIO(cr, secondary, secondary))
 			go func() {
 				// To mimic os/exec.Cmd.Start, use a goroutine.
 				if err := r.Run(context.Background(), file); err != nil {

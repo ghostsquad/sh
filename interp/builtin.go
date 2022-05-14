@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/muesli/cancelreader"
+
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -819,6 +821,7 @@ func (r *Runner) readLine(raw bool) ([]byte, error) {
 	if r.stdin == nil {
 		return nil, errors.New("interp: can't read, there's no stdin")
 	}
+	defer r.stdin.Close()
 
 	var line []byte
 	esc := false
@@ -842,6 +845,9 @@ func (r *Runner) readLine(raw bool) ([]byte, error) {
 				line = append(line, b)
 				esc = false
 			}
+		}
+		if errors.Is(err, cancelreader.ErrCanceled) {
+			return nil, err
 		}
 		if err == io.EOF && len(line) > 0 {
 			return line, nil

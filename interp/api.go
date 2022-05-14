@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/muesli/cancelreader"
 	"golang.org/x/sync/errgroup"
 
 	"mvdan.cc/sh/v3/expand"
@@ -77,7 +78,7 @@ type Runner struct {
 	// statHandler is a function responsible for getting file stat. It must be non-nil.
 	statHandler StatHandlerFunc
 
-	stdin  io.Reader
+	stdin  cancelreader.CancelReader
 	stdout io.Writer
 	stderr io.Writer
 
@@ -131,7 +132,7 @@ type Runner struct {
 	origDir    string
 	origParams []string
 	origOpts   runnerOpts
-	origStdin  io.Reader
+	origStdin  cancelreader.CancelReader
 	origStdout io.Writer
 	origStderr io.Writer
 
@@ -351,7 +352,7 @@ func StatHandler(f StatHandlerFunc) RunnerOption {
 // StdIO configures an interpreter's standard input, standard output, and
 // standard error. If out or err are nil, they default to a writer that discards
 // the output.
-func StdIO(in io.Reader, out, err io.Writer) RunnerOption {
+func StdIO(in cancelreader.CancelReader, out, err io.Writer) RunnerOption {
 	return func(r *Runner) error {
 		r.stdin = in
 		if out == nil {

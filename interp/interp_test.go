@@ -20,6 +20,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/muesli/cancelreader"
+
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -106,8 +108,16 @@ func TestMain(m *testing.M) {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+
+		cr, err := cancelreader.NewReader(os.Stdin)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		defer cr.Close()
+
 		runner, _ := New(
-			StdIO(os.Stdin, os.Stdout, os.Stderr),
+			StdIO(cr, os.Stdout, os.Stderr),
 			OpenHandler(testOpenHandler),
 			ExecHandler(testExecHandler),
 		)
@@ -3405,11 +3415,18 @@ var testBuiltinsMap = map[string]func(HandlerContext, []string) error{
 		switch len(args) {
 		case 1:
 		case 2:
-			var err error
-			f, err = os.Open(absPath(hc.Dir, args[1]))
+			f2, err := os.Open(absPath(hc.Dir, args[1]))
 			if err != nil {
 				return err
 			}
+
+			cr, err := cancelreader.NewReader(f2)
+			if err != nil {
+				return err
+			}
+			defer cr.Close()
+
+			f = cr
 		default:
 			return fmt.Errorf("usage: sed pattern [file]")
 		}

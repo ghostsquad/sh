@@ -17,6 +17,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/muesli/cancelreader"
+
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/pattern"
 	"mvdan.cc/sh/v3/syntax"
@@ -86,6 +88,7 @@ func (r *Runner) fillExpandConfig(ctx context.Context) {
 			r2 := r.Subshell()
 			stdout := r.origStdout
 			r.wgProcSubsts.Add(1)
+
 			go func() {
 				defer r.wgProcSubsts.Done()
 				switch ps.Op {
@@ -108,11 +111,19 @@ func (r *Runner) fillExpandConfig(ctx context.Context) {
 						r.errf("cannot open fifo for stdin: %v", err)
 						return
 					}
-					r2.stdin = f
+
+					cr, err := cancelreader.NewReader(f)
+					if err != nil {
+						r.errf("cannot create cancel reader: %v", err)
+						return
+					}
+
+					r2.stdin = cr
 					r2.stdout = stdout
 
 					defer func() {
 						f.Close()
+						cr.Close()
 						os.Remove(path)
 					}()
 				}
@@ -421,17 +432,30 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			} else {
 				r2.stderr = r.stderr
 			}
-			r.stdin = pr
+
+			cr, err := cancelreader.NewReader(pr)
+			if err != nil {
+				panic(err)
+			}
+
+			r.stdin = cr
+
 			var wg sync.WaitGroup
 			wg.Add(1)
 			go func() {
 				r2.stmt(ctx, x.X)
 				pw.Close()
-				wg.Done()
 			}()
+
 			r.stmt(ctx, x.Y)
 			pr.Close()
+			cr.Close()
 			wg.Wait()
+
+			if err != nil {
+				panic(err)
+			}
+
 			if r.opts[optPipeFail] && r2.exit != 0 && r.exit == 0 {
 				r.exit = r2.exit
 			}
@@ -728,10 +752,16 @@ func (r *Runner) stmts(ctx context.Context, stmts []*syntax.Stmt) {
 	}
 }
 
-func (r *Runner) hdocReader(rd *syntax.Redirect) io.Reader {
+func (r *Runner) hdocReader(rd *syntax.Redirect) cancelreader.CancelReader {
 	if rd.Op != syntax.DashHdoc {
 		hdoc := r.document(rd.Hdoc)
-		return strings.NewReader(hdoc)
+
+		cr, err := cancelreader.NewReader(strings.NewReader(hdoc))
+		if err != nil {
+			panic(err)
+		}
+
+		return cr
 	}
 	var buf bytes.Buffer
 	var cur []syntax.WordPart
@@ -758,7 +788,13 @@ func (r *Runner) hdocReader(rd *syntax.Redirect) io.Reader {
 		}
 	}
 	flushLine()
-	return &buf
+
+	cr, err := cancelreader.NewReader(&buf)
+	if err != nil {
+		panic(err)
+	}
+
+	return cr
 }
 
 func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, error) {
@@ -777,7 +813,12 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 	arg := r.literal(rd.Word)
 	switch rd.Op {
 	case syntax.WordHdoc:
-		r.stdin = strings.NewReader(arg + "\n")
+		cr, err := cancelreader.NewReader(strings.NewReader(arg + "\n"))
+		if err != nil {
+			return nil, err
+		}
+
+		r.stdin = cr
 		return nil, nil
 	case syntax.DplOut:
 		switch arg {
@@ -807,7 +848,11 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 	}
 	switch rd.Op {
 	case syntax.RdrIn:
-		r.stdin = f
+		cr, err := cancelreader.NewReader(f)
+		if err != nil {
+			return nil, err
+		}
+		r.stdin = cr
 	case syntax.RdrOut, syntax.AppOut:
 		*orig = f
 	case syntax.RdrAll, syntax.AppAll:
